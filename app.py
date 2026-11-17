@@ -14,7 +14,6 @@ def buat_file_excel(df: pd.DataFrame, nama_sheet: str, kolom_angka: list, daftar
         df.to_excel(writer, index=False, sheet_name=nama_sheet)
         ws = writer.sheets[nama_sheet]
 
-        # Definisi Style
         header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True)
         pred_fill = PatternFill(start_color="FEF9C3", end_color="FEF9C3", fill_type="solid")
@@ -22,7 +21,6 @@ def buat_file_excel(df: pd.DataFrame, nama_sheet: str, kolom_angka: list, daftar
         thin_side = Side(border_style="thin", color="CBD5E1")
         border_style = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
 
-        # Styling Header (Baris 1)
         for col_idx in range(1, len(df.columns) + 1):
             cell = ws.cell(row=1, column=col_idx)
             cell.fill = header_fill
@@ -31,18 +29,15 @@ def buat_file_excel(df: pd.DataFrame, nama_sheet: str, kolom_angka: list, daftar
             cell.border = border_style
         ws.row_dimensions[1].height = 24
 
-        # Styling Baris Data & Highlight Baris Prediksi
         idx_status = df.columns.get_loc("Status Data") + 1
         for row_idx in range(2, len(df) + 2):
             is_prediksi = ws.cell(row=row_idx, column=idx_status).value == "Prediksi"
             for col_idx, col_name in enumerate(df.columns, start=1):
                 cell = ws.cell(row=row_idx, column=col_idx)
                 cell.border = border_style
-
                 if is_prediksi:
                     cell.fill = pred_fill
                     cell.font = pred_font
-
                 if col_name in kolom_angka:
                     cell.number_format = "#,##0"
                     cell.alignment = Alignment(horizontal="right", vertical="center")
@@ -51,18 +46,13 @@ def buat_file_excel(df: pd.DataFrame, nama_sheet: str, kolom_angka: list, daftar
                 else:
                     cell.alignment = Alignment(horizontal="left", vertical="center")
 
-        # Auto-adjust lebar kolom & Freeze header
         for col_idx, col_name in enumerate(df.columns, start=1):
             col_letter = get_column_letter(col_idx)
-            max_len = max(
-                df[col_name].astype(str).map(len).max(),
-                len(str(col_name))
-            ) + 4
+            max_len = max(df[col_name].astype(str).map(len).max(), len(str(col_name))) + 4
             ws.column_dimensions[col_letter].width = max_len
 
         ws.freeze_panes = "A2"
 
-        # Tambahkan Sheet Kesimpulan jika tersedia
         if daftar_kesimpulan:
             ws_kes = writer.book.create_sheet(title="Kesimpulan Analisis")
             ws_kes["A1"] = "RINGKASAN & KESIMPULAN ANALISIS PERAMALAN"
@@ -94,11 +84,8 @@ DAFTAR_PRODUK = ["WORKJACKET", "VARSITY", "COACH", "BOMBER", "LAINNYA"]
 
 
 def hitung_tahun_bulan(periode: int):
-    # Periode 1 = Maret 2024 (index bulan = 2 dari 0-based)
     total_bulan = (2024 * 12 + 2) + (periode - 1)
-    tahun = total_bulan // 12
-    bulan = NAMA_BULAN[total_bulan % 12]
-    return tahun, bulan
+    return total_bulan // 12, NAMA_BULAN[total_bulan % 12]
 
 
 def inisialisasi_data():
@@ -113,54 +100,42 @@ def inisialisasi_data():
         for idx, val in enumerate(po_bulanan, start=1):
             thn, bln = hitung_tahun_bulan(idx)
             rows.append({
-                "Tahun": thn,
-                "Bulan": bln,
-                "Periode": idx,
-                "Jumlah PO": int(val),
-                "Status Data": "Aktual"
+                "Tahun": thn, "Bulan": bln, "Periode": idx,
+                "Jumlah PO": int(val), "Status Data": "Aktual"
             })
         st.session_state.df_bulanan = pd.DataFrame(rows)
 
     if "df_produk" not in st.session_state:
-        workjacket = [
+        wj = [
             281, 207, 575, 301, 193, 36, 345, 210, 0, 0,
             579, 313, 237, 862, 217, 455, 228, 259, 391, 511, 547, 339,
             687, 931, 265, 519, 329, 582, 720, 393, 1503, 1396
         ]
-        varsity = [
+        vr = [
             251, 544, 422, 818, 310, 560, 1203, 441, 594, 300,
             523, 658, 790, 351, 562, 597, 509, 312, 432, 254, 491, 303,
             333, 160, 100, 104, 204, 75, 70, 378, 100, 87
         ]
-        coach = [
+        ch = [
             330, 90, 573, 134, 233, 101, 26, 151, 0, 122,
             37, 64, 110, 0, 0, 0, 0, 0, 89, 197, 97, 71,
             73, 24, 0, 15, 0, 0, 22, 150, 82, 1
         ]
-        bomber = [
+        bm = [
             112, 83, 52, 48, 0, 13, 37, 173, 481, 550,
             281, 36, 0, 0, 851, 359, 140, 1086, 1263, 777, 0, 85,
             114, 116, 442, 742, 353, 150, 130, 131, 358, 244
         ]
-        lainnya = [
-            max(0, tot - (wj + vr + ch + bm))
-            for tot, wj, vr, ch, bm in zip(po_bulanan, workjacket, varsity, coach, bomber)
-        ]
+        ln = [max(0, t - (a + b + c + d)) for t, a, b, c, d in zip(po_bulanan, wj, vr, ch, bm)]
 
         rows_prod = []
         for idx in range(1, len(po_bulanan) + 1):
             thn, bln = hitung_tahun_bulan(idx)
             i = idx - 1
             rows_prod.append({
-                "Tahun": thn,
-                "Bulan": bln,
-                "Periode": idx,
-                "WORKJACKET": workjacket[i],
-                "VARSITY": varsity[i],
-                "COACH": coach[i],
-                "BOMBER": bomber[i],
-                "LAINNYA": lainnya[i],
-                "Status Data": "Aktual"
+                "Tahun": thn, "Bulan": bln, "Periode": idx,
+                "WORKJACKET": wj[i], "VARSITY": vr[i], "COACH": ch[i],
+                "BOMBER": bm[i], "LAINNYA": ln[i], "Status Data": "Aktual"
             })
         st.session_state.df_produk = pd.DataFrame(rows_prod)
 
@@ -169,18 +144,14 @@ def hitung_regresi_linear(df_aktual: pd.DataFrame, kolom_target: str, bulan_pred
     x = df_aktual["Periode"].to_numpy(dtype=float)
     y = df_aktual[kolom_target].to_numpy(dtype=float)
 
-    # Regresi Linear Sederhana: Y = a + bX
     slope, intercept = np.polyfit(x, y, 1)
     y_hat = intercept + slope * x
 
-    # Evaluasi Model
     mae = float(np.mean(np.abs(y - y_hat)))
-    rmse = float(np.sqrt(np.mean((y - y_hat) ** 2)))
     ss_res = float(np.sum((y - y_hat) ** 2))
     ss_tot = float(np.sum((y - np.mean(y)) ** 2))
     r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
 
-    # Proyeksi periode masa depan
     periode_terakhir = int(df_aktual["Periode"].max())
     rows_pred = []
     for step in range(1, bulan_prediksi + 1):
@@ -188,11 +159,8 @@ def hitung_regresi_linear(df_aktual: pd.DataFrame, kolom_target: str, bulan_pred
         thn, bln = hitung_tahun_bulan(p_baru)
         nilai_pred = max(0, int(round(intercept + slope * p_baru)))
         rows_pred.append({
-            "Tahun": thn,
-            "Bulan": bln,
-            "Periode": p_baru,
-            kolom_target: nilai_pred,
-            "Status Data": "Prediksi"
+            "Tahun": thn, "Bulan": bln, "Periode": p_baru,
+            kolom_target: nilai_pred, "Status Data": "Prediksi"
         })
 
     df_pred = pd.DataFrame(rows_pred)
@@ -202,13 +170,7 @@ def hitung_regresi_linear(df_aktual: pd.DataFrame, kolom_target: str, bulan_pred
     )
     df_hasil["Garis Tren"] = np.maximum(0, np.round(intercept + slope * df_hasil["Periode"], 1))
 
-    info_model = {
-        "intercept": intercept,
-        "slope": slope,
-        "r2": r2,
-        "mae": mae,
-        "rmse": rmse
-    }
+    info_model = {"intercept": intercept, "slope": slope, "r2": r2, "mae": mae}
     return df_hasil, info_model
 
 
@@ -263,9 +225,12 @@ def buat_penjelasan_kesimpulan(df_hasil: pd.DataFrame, info_model: dict, kolom_t
     return kesimpulan
 
 
-# ==========================================
-# TAMPILAN UTAMA DASHBOARD
-# ==========================================
+def warnai_baris_prediksi(row):
+    if row["Status Data"] == "Prediksi":
+        return ["background-color: #FEF9C3; font-weight: bold"] * len(row)
+    return [""] * len(row)
+
+
 inisialisasi_data()
 
 st.title("Dashboard Peramalan Purchase Order (PO) Konveksi")
@@ -280,22 +245,11 @@ with st.sidebar:
         del st.session_state["df_produk"]
         st.rerun()
 
-tab1, tab2, tab3 = st.tabs([
-    "Peramalan Total PO",
-    "Peramalan Per Produk",
-    "Kelola & Edit Data"
-])
+tab1, tab2, tab3 = st.tabs(["Peramalan Total PO", "Peramalan Per Produk", "Kelola & Edit Data"])
 
-# --- TAB 1: TOTAL PO ---
 with tab1:
-    df_hasil_total, info_total = hitung_regresi_linear(
-        st.session_state.df_bulanan,
-        kolom_target="Jumlah PO",
-        bulan_prediksi=jumlah_prediksi
-    )
-    kesimpulan_total = buat_penjelasan_kesimpulan(
-        df_hasil_total, info_total, kolom_target="Jumlah PO", nama_objek="Total PO"
-    )
+    df_hasil_total, info_total = hitung_regresi_linear(st.session_state.df_bulanan, "Jumlah PO", jumlah_prediksi)
+    kesimpulan_total = buat_penjelasan_kesimpulan(df_hasil_total, info_total, "Jumlah PO", "Total PO")
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Slope (Tren / Bulan)", f"{info_total['slope']:+.2f} pcs")
@@ -303,18 +257,17 @@ with tab1:
     m3.metric("R-Squared (R²)", f"{info_total['r2']:.4f}")
     m4.metric("MAE (Rata-rata Error)", f"{info_total['mae']:,.1f} pcs")
 
-    # Grafik Tren & Peramalan
     st.subheader("Grafik Tren & Hasil Peramalan Total PO")
     df_chart_total = df_hasil_total.copy()
-    df_chart_total["Periode Label"] = df_chart_total["Periode"].astype(str).str.zfill(2) + " - " + df_chart_total["Bulan"].str[:3] + " " + df_chart_total["Tahun"].astype(str)
+    df_chart_total["Periode Label"] = (
+        df_chart_total["Periode"].astype(str).str.zfill(2)
+        + " - " + df_chart_total["Bulan"].str[:3]
+        + " " + df_chart_total["Tahun"].astype(str)
+    )
     df_chart_total["Data Aktual"] = np.where(df_chart_total["Status Data"] == "Aktual", df_chart_total["Jumlah PO"], np.nan)
     df_chart_total["Data Prediksi"] = np.where(df_chart_total["Status Data"] == "Prediksi", df_chart_total["Jumlah PO"], np.nan)
-    st.line_chart(
-        df_chart_total.set_index("Periode Label")[["Data Aktual", "Data Prediksi", "Garis Tren"]],
-        height=380
-    )
+    st.line_chart(df_chart_total.set_index("Periode Label")[["Data Aktual", "Data Prediksi", "Garis Tren"]], height=380)
 
-    # Panel Penjelasan & Kesimpulan
     with st.container(border=True):
         st.subheader("Penjelasan & Kesimpulan Analisis (Total PO)")
         for poin in kesimpulan_total:
@@ -324,12 +277,7 @@ with tab1:
     with col_kiri:
         st.subheader("Tabel Data Aktual & Prediksi")
     with col_kanan:
-        excel_total = buat_file_excel(
-            df_hasil_total,
-            nama_sheet="Peramalan_Total_PO",
-            kolom_angka=["Jumlah PO", "Garis Tren"],
-            daftar_kesimpulan=kesimpulan_total
-        )
+        excel_total = buat_file_excel(df_hasil_total, "Peramalan_Total_PO", ["Jumlah PO", "Garis Tren"], kesimpulan_total)
         st.download_button(
             label="Download Excel (.xlsx)",
             data=excel_total,
@@ -338,5 +286,86 @@ with tab1:
             use_container_width=True
         )
 
-    st.dataframe(
-        df_hasil_total.style.apply(
+    st.dataframe(df_hasil_total.style.apply(warnai_baris_prediksi, axis=1), use_container_width=True, hide_index=True)
+
+with tab2:
+    produk_pilih = st.selectbox("Pilih Kategori Produk:", DAFTAR_PRODUK)
+
+    df_hasil_prod, info_prod = hitung_regresi_linear(st.session_state.df_produk, produk_pilih, jumlah_prediksi)
+    kesimpulan_prod = buat_penjelasan_kesimpulan(df_hasil_prod, info_prod, produk_pilih, f"PO {produk_pilih}")
+
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric(f"Tren {produk_pilih}", f"{info_prod['slope']:+.2f} pcs/bln")
+    p2.metric("Intercept (a)", f"{info_prod['intercept']:,.2f}")
+    p3.metric("R-Squared (R²)", f"{info_prod['r2']:.4f}")
+    p4.metric("MAE", f"{info_prod['mae']:,.1f} pcs")
+
+    st.subheader(f"Grafik Peramalan Produk: {produk_pilih}")
+    df_chart_prod = df_hasil_prod.copy()
+    df_chart_prod["Periode Label"] = (
+        df_chart_prod["Periode"].astype(str).str.zfill(2)
+        + " - " + df_chart_prod["Bulan"].str[:3]
+        + " " + df_chart_prod["Tahun"].astype(str)
+    )
+    df_chart_prod["Data Aktual"] = np.where(df_chart_prod["Status Data"] == "Aktual", df_chart_prod[produk_pilih], np.nan)
+    df_chart_prod["Data Prediksi"] = np.where(df_chart_prod["Status Data"] == "Prediksi", df_chart_prod[produk_pilih], np.nan)
+    st.line_chart(df_chart_prod.set_index("Periode Label")[["Data Aktual", "Data Prediksi", "Garis Tren"]], height=380)
+
+    with st.container(border=True):
+        st.subheader(f"Penjelasan & Kesimpulan Analisis ({produk_pilih})")
+        for poin in kesimpulan_prod:
+            st.markdown(f"- {poin}")
+
+    df_akt_all = st.session_state.df_produk
+    total_per_prod = {p: int(df_akt_all[p].sum()) for p in DAFTAR_PRODUK}
+    terlaris = max(total_per_prod, key=total_per_prod.get)
+
+    tren_per_prod = {p: hitung_regresi_linear(df_akt_all, p, 1)[1]["slope"] for p in DAFTAR_PRODUK}
+    tumbuh_cepat = max(tren_per_prod, key=tren_per_prod.get)
+
+    st.info(
+        f"**Kesimpulan Perbandingan Antar-Produk:** Kontributor volume tertinggi adalah **{terlaris}** "
+        f"(total **{total_per_prod[terlaris]:,} pcs**), sedangkan produk dengan laju pertumbuhan tren tercepat adalah "
+        f"**{tumbuh_cepat}** (**{tren_per_prod[tumbuh_cepat]:+.2f} pcs/bulan**)."
+    )
+
+    excel_prod = buat_file_excel(df_hasil_prod, f"Peramalan_{produk_pilih}", [produk_pilih, "Garis Tren"], kesimpulan_prod)
+    st.download_button(
+        label=f"Download Excel {produk_pilih} (.xlsx)",
+        data=excel_prod,
+        file_name=f"Peramalan_{produk_pilih}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+with tab3:
+    st.subheader("Edit Data Aktual atau Tambah Periode Baru")
+    st.write("Ubah angka pada tabel di bawah, lalu klik **Simpan Perubahan** untuk memperbarui grafik dan kesimpulan.")
+
+    df_edit = st.data_editor(
+        st.session_state.df_produk,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        disabled=["Tahun", "Bulan", "Periode", "Status Data"]
+    )
+
+    if st.button("Simpan Perubahan", type="primary"):
+        df_baru = df_edit.copy()
+        for i in range(len(df_baru)):
+            periode_ke = i + 1
+            thn, bln = hitung_tahun_bulan(periode_ke)
+            df_baru.loc[i, "Periode"] = periode_ke
+            df_baru.loc[i, "Tahun"] = thn
+            df_baru.loc[i, "Bulan"] = bln
+            df_baru.loc[i, "Status Data"] = "Aktual"
+            for p in DAFTAR_PRODUK:
+                df_baru.loc[i, p] = 0 if pd.isna(df_baru.loc[i, p]) else int(df_baru.loc[i, p])
+
+        st.session_state.df_produk = df_baru
+
+        df_bulanan_baru = df_baru[["Tahun", "Bulan", "Periode", "Status Data"]].copy()
+        df_bulanan_baru["Jumlah PO"] = df_baru[DAFTAR_PRODUK].sum(axis=1).astype(int)
+        st.session_state.df_bulanan = df_bulanan_baru[["Tahun", "Bulan", "Periode", "Jumlah PO", "Status Data"]]
+
+        st.success("Data berhasil diperbarui!")
+        st.rerun()
