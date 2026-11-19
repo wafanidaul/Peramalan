@@ -90,18 +90,19 @@ def prediksi_autoreg_series(y_series: np.ndarray, langkah: int = 3) -> np.ndarra
     try:
         sel = ar_select_order(y, maxlag=max_lag, ic="aic", trend="c")
         lags = sel.ar_lags if sel.ar_lags else [1]
-        model = AutoReg(y, lags=lags, trend="c", old_names=False)
+        model = AutoReg(y, lags=lags, trend="c")
         fit = model.fit()
         pred = fit.predict(start=n, end=n + langkah - 1)
     except Exception:
         fallback_lag = min(1, n - 1)
-        fit = AutoReg(y, lags=fallback_lag, trend="c", old_names=False).fit()
+        fit = AutoReg(y, lags=fallback_lag, trend="c").fit()
         pred = fit.predict(start=n, end=n + langkah - 1)
 
     return np.maximum(0, np.round(pred)).astype(int)
 
 def buat_prediksi_3_bulan(df_aktual: pd.DataFrame, kolom_target: list):
-    periode_terakhir = int(df_aktual["Periode"].max())
+    df_urut = df_aktual.sort_values("Periode").reset_index(drop=True)
+    periode_terakhir = int(df_urut["Periode"].max())
     periode_depan = np.arange(periode_terakhir + 1, periode_terakhir + 4)
 
     rows_pred = []
@@ -117,7 +118,7 @@ def buat_prediksi_3_bulan(df_aktual: pd.DataFrame, kolom_target: list):
     df_pred = pd.DataFrame(rows_pred)
 
     for col in kolom_target:
-        y = df_aktual[col].fillna(0).values
+        y = df_urut[col].fillna(0).values
         df_pred[col] = prediksi_autoreg_series(y, langkah=3)
 
     kolom_urut = ["Tahun", "Bulan", "Periode"] + kolom_target + ["Status Data"]
