@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from statsmodels.tsa.ar_model import AutoReg, ar_select_order
+from statsmodels.tsa.api import VAR
 import plotly.graph_objects as go
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -100,7 +101,48 @@ def prediksi_autoreg_series(y_series: np.ndarray, langkah: int = 3) -> np.ndarra
 
     return np.maximum(0, np.round(pred)).astype(int)
 
-def buat_prediksi_3_bulan(df_aktual: pd.DataFrame, kolom_target: list):
+def prediksi_var_multivariate(df_urut: pd.DataFrame, kolom_target: list, langkah: int = 3):
+    """Memprediksi semua kolom produk secara simultan dengan VAR, dengan fallback AR jika gagal."""
+    k = len(kolom_target)
+    n = len(df_urut)
+
+    # Jika hanya 1 produk, VAR identik dengan AR univariate
+    if k == 1:
+        col = kolom_target[0]
+        y = df_urut[col].fillna(0).values
+        return {col: prediksi_autoreg_series(y, langkah=langkah)}, "AR(p) (1 produk)"
+
+    # Butuhkan cukup observasi agar parameter VAR tidak over-parameterized
+    if n < max(6, k * 2 + 2):
+        hasil = {
+            col: prediksi_autoreg_series(df_urut[col].fillna(0).values, langkah=langkah)
+            for col in kolom_target
+        }
+        return hasil, "Fallback AR(p) (observasi terbatas)"
+
+    df_mv = df_urut[kolom_target].fillna(0).astype(float).copy()
+    max_lag = min(4, max(1, (n - 2) // (k + 1)))
+
+    try:
+        model = VAR(df_mv)
+        sel = model.select_order(maxlags=max_lag)
+        p = sel.aic if sel.aic and sel.aic >= 1 else 1
+        fit = model.fit(p)
+        y_input = df_mv.values[-p:]
+        fc = fit.forecast(y=y_input, steps=langkah)
+
+        hasil = {}
+        for idx, col in enumerate(kolom_target):
+            hasil[col] = np.maximum(0, np.round(fc[:, idx])).astype(int)
+        return hasil, f"VAR({p}) (AIC)"
+    except Exception:
+        hasil = {
+            col: prediksi_autoreg_series(df_urut[col].fillna(0).values, langkah=langkah)
+            for col in kolom_target
+        }
+        return hasil, "Fallback AR(p) (matriks VAR singular/tidak stabil)"
+
+def buat_prediksi_3_bulan(df_aktual: pd.DataFrame, kolom_target: list, metode: str = "AR"):
     df_urut = df_aktual.sort_values("Periode").reset_index(drop=True)
     periode_terakhir = int(df_urut["Periode"].max())
     periode_depan = np.arange(periode_terakhir + 1, periode_terakhir + 4)
@@ -116,13 +158,20 @@ def buat_prediksi_3_bulan(df_aktual: pd.DataFrame, kolom_target: list):
         })
 
     df_pred = pd.DataFrame(rows_pred)
+    info_model = ""
 
-    for col in kolom_target:
-        y = df_urut[col].fillna(0).values
-        df_pred[col] = prediksi_autoreg_series(y, langkah=3)
+    if metode == "VAR":
+        hasil_dict, info_model = prediksi_var_multivariate(df_urut, kolom_target, langkah=3)
+        for col in kolom_target:
+            df_pred[col] = hasil_dict[col]
+    else:
+        for col in kolom_target:
+            y = df_urut[col].fillna(0).values
+            df_pred[col] = prediksi_autoreg_series(y, langkah=3)
+        info_model = "AR(p) per kolom"
 
     kolom_urut = ["Tahun", "Bulan", "Periode"] + kolom_target + ["Status Data"]
-    return df_pred[kolom_urut]
+    return df_pred[kolom_urut], info_model
 
 def warnai_baris_prediksi(row):
     if row["Status Data"] == "Prediksi":
@@ -275,7 +324,7 @@ if halaman == "1. PO Bulanan":
     st.caption("Model Autoregressive (AR) memproyeksikan 3 bulan ke depan berdasarkan lag historis bulanan.")
 
     df_akt = st.session_state.df_bulanan.copy()
-    df_pred = buat_prediksi_3_bulan(df_akt, ["Jumlah PO"])
+    df_pred, _ = buat_prediksi_3_bulan(df_akt, ["Jumlah PO"], metode="AR")
     df_gabungan = pd.concat([df_akt, df_pred], ignore_index=True)
 
     baris_pred_1 = df_pred.iloc[0]
@@ -407,16 +456,16 @@ if halaman == "1. PO Bulanan":
     st.plotly_chart(fig, use_container_width=True)
 
 # ==============================================================================
-# HALAMAN 2: PERAMALAN PRODUK UTAMA
+# HALAMAN 2: PERAMALAN PRODUK UTAMA (VAR)
 # ==============================================================================
 elif halaman == "2. Peramalan Produk Utama":
-    st.title("🧥 Peramalan Produk Utama (Terlaris)")
-    st.caption("Proyeksi Autoregressive (AR) 3 bulan ke depan per jenis produk utama. Dapat menambah produk baru, mengedit data historis, & memperbarui realisasi bulanan.")
-
+    st.title("🧥 Peramalan Produk Utama (VAR)")
     daftar_prod = st.session_state.daftar_produk
     df_akt_prod = st.session_state.df_produk.copy()
-    df_pred_prod = buat_prediksi_3_bulan(df_akt_prod, daftar_prod)
+    df_pred_prod, info_var = buat_prediksi_3_bulan(df_akt_prod, daftar_prod, metode="VAR")
     df_gabungan_prod = pd.concat([df_akt_prod, df_pred_prod], ignore_index=True)
+
+    st.caption(f"Proyeksi 3 bulan ke depan antarproduk secara simultan menggunakan Vector Autoregression (VAR). Status model aktif: **{info_var}**.")
 
     with st.expander("➕ Tambah Produk Baru untuk Diprediksi"):
         st.write("Masukkan nama produk baru dan isi data historis bulanannya (isi 0 jika belum ada pesanan di bulan tersebut):")
@@ -479,7 +528,7 @@ elif halaman == "2. Peramalan Produk Utama":
 
     col_hdr_p, col_edit_btn_p = st.columns([3, 1])
     with col_hdr_p:
-        st.subheader("📋 Tabel Historis & Proyeksi Produk Utama (Autoregressive)")
+        st.subheader("📋 Tabel Historis & Proyeksi Produk Utama (VAR)")
     with col_edit_btn_p:
         st.write("")
         if not st.session_state.mode_edit_produk:
@@ -519,7 +568,7 @@ elif halaman == "2. Peramalan Produk Utama":
             st.download_button(
                 "📥 Download Prediksi Produk (CSV)",
                 data=csv_prod,
-                file_name="prediksi_produk_utama.csv",
+                file_name="prediksi_produk_utama_var.csv",
                 mime="text/csv",
                 use_container_width=True
             )
@@ -528,14 +577,14 @@ elif halaman == "2. Peramalan Produk Utama":
             st.download_button(
                 "📊 Download Prediksi Produk (Excel)",
                 data=excel_prod,
-                file_name="prediksi_produk_utama.xlsx",
+                file_name="prediksi_produk_utama_var.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
 
     st.markdown("---")
 
-    st.subheader("📈 Grafik Tren Aktual & Prediksi per Produk (AR)")
+    st.subheader("📈 Grafik Tren Aktual & Prediksi per Produk (VAR)")
     palette = ["#1E3A5F", "#D97706", "#059669", "#7C3AED", "#DC2626", "#0284C7"]
     fig_prod = go.Figure()
 
@@ -554,7 +603,7 @@ elif halaman == "2. Peramalan Produk Utama":
             x=df_sambung["Periode"],
             y=df_sambung[prod],
             mode="lines+markers",
-            name=f"{prod} (Prediksi AR)",
+            name=f"{prod} (Prediksi VAR)",
             line=dict(color=warna, width=2.5, dash="dash"),
             marker=dict(size=8, symbol="diamond")
         ))
